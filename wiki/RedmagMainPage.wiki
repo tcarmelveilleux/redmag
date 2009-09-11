@@ -1,6 +1,6 @@
 #summary Main page of contents to Redmag wiki
 
-= Sections =
+= Main page of contents to Redmag wiki =
+== Sections =
 
   * [BuildingRedmag] : Information about how to build Redmag
-
