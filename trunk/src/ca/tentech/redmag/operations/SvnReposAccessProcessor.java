@@ -6,6 +6,11 @@
  *
  * By Tennessee Carmel-Veillleux (veilleux (at) tentech (dot) ca) 
  *
+ * History: 
+ * - June 2009 (veilleux):  Original version
+ * - September 13 2009 (veilleux): 
+ *   - Fixed the missing display in verbose mode when no repositories were created
+ *   
  * Description:
  * Processing class for generating SVN repository access. Handles
  * creating missing SVN repositories as well as generating SVN
@@ -236,10 +241,12 @@ public class SvnReposAccessProcessor {
 				SVNWCUtil.createDefaultOptions(true));
 		
 		if (verbose) { System.out.println("\n*** Creating missing repositories"); }
-		
+
+		int numberCreated = 0;			
 		for (String path : validSvnPath) {	
 			// Only create repositories that don't already exist
 			if (!existingSvnPath.contains(path)) {
+				numberCreated++;
 				if (verbose) {
 					System.out.printf("   Creating a repository at \"%s\" : ", path );
 				}
@@ -255,6 +262,8 @@ public class SvnReposAccessProcessor {
 				}
 			}
 		}
+		
+		if (verbose && numberCreated == 0) { System.out.println("    SUCCESS: None to create !"); }
 	}
 	
 	/**

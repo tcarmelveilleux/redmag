@@ -3,9 +3,19 @@
  * Date: 2009-06-23
  * Time: 22:17:49
  * $Id$
- *
- * By Tennessee Carmel-Veillleux (veilleux (at) tentech (dot) ca) 
- *
+ * 
+ * By Tennessee Carmel-Veillleux (veilleux (at) tentech (dot) ca)
+ * 
+ * History: 
+ * - June 2009 (veilleux):  Original version with JOpt-Simple
+ * - September 13 2009 (veilleux): 
+ *   - Switched to com.Ostermiller.util.CmdLn for option parsing (GPL)
+ *   - Tested all argument parsing error handlers
+ *   - Simplified validation logic
+ *   - Simplified error message display
+ *   - Added an argument to specify database host
+ *   - Bumped minor version to 1.2
+ * 
  * Description:
  * Main class for command-line version of Redmag tool
  *  
@@ -28,19 +38,15 @@
  */
 package ca.tentech.redmag;
 
-import static java.util.Arrays.asList;
-
-import java.io.File;
-import java.io.IOException;
 import java.sql.SQLException;
 import java.util.LinkedList;
 import java.util.List;
 
 import ca.tentech.redmag.operations.SvnReposAccessProcessor;
 
-import joptsimple.OptionException;
-import joptsimple.OptionParser;
-import joptsimple.OptionSet;
+import com.Ostermiller.util.CmdLn;
+import com.Ostermiller.util.CmdLnException;
+import com.Ostermiller.util.CmdLnOption;
 
 /**
  * Main class for command-line version of Redmag tool. Parses the command line
@@ -50,7 +56,7 @@ import joptsimple.OptionSet;
  *
  */
 public class RedmagMain {
-	public static final String VERSION = "1.1";
+	public static final String VERSION = "1.2";
 	public static final String VERSION_STRING = "Redmag v"+VERSION+
 	"\nThe automatic SVN repository management tool for Redmine integration\n"+
 	"By Tennessee Carmel-Veilleux (veilleux@tentech.ca)\n";
@@ -60,183 +66,185 @@ public class RedmagMain {
 	private static final int DB_ERROR_EXITCODE = 3;
 	
 	private static final int DEFAULT_DATABASE_PORT = 3306;
+	private static final String DEFAULT_DATABASE_HOST = "localhost";
 	
 	/**
 	 * Main entrypoint for Redmag command-line operation
 	 * 
-	 * @param args - N/A
+	 * @param args - command-line arguments
 	 */
-	@SuppressWarnings("unchecked")
 	public static void main(String[] args) {
 		// Set default values for parameters
-		String username = "";
-		String password = "";
-		String svnRoot = "/svn";
-		String dbUrl = "";
 		List<Integer> readRoles = new LinkedList<Integer>();
 		List<Integer> readWriteRoles = new LinkedList<Integer>();
 		boolean createMissingRepos = false;
 		boolean verbose = false;
 		String outputFilename = "/svn/access.authZ";
+		String svnRoot = "/svn";
+		SvnReposAccessProcessor processor = null;
 		
-        OptionParser parser = new OptionParser() {
-            {
-            	acceptsAll( asList("u", "user") ).withRequiredArg().ofType( String.class )
-                    .describedAs( "Redmine database username" );
-            
-            	acceptsAll( asList("p", "password") ).withRequiredArg().ofType( String.class )
-                    .describedAs( "Redmine database password" );
-            	
-            	acceptsAll( asList("s", "svn-root") ).withRequiredArg().ofType( String.class )
-                .describedAs( "SVN repositories root (default: /svn)" );
-                
-            	acceptsAll( asList("d", "dbname") ).withRequiredArg().ofType( String.class )
-                .describedAs( "Redmine database name" );
-            	
-            	accepts( "port" ).withRequiredArg().ofType( Integer.class )
-                	.describedAs( "Redmine database port" );
-            
-                acceptsAll( asList( "v", "verbose" ), "be verbose" );
-                acceptsAll( asList( "l", "list-roles" ), "list available user roles" );
-                
-                accepts( "output-file" ).withOptionalArg().ofType( File.class )
-                     .describedAs( "filename (default:/svn/access.authZ)" );
-                acceptsAll( asList( "h", "?" ), "show help" );
-                
-                accepts("read-roles", "Provide list of roleIds that can read SVN" ).withRequiredArg()
-                    .describedAs( "roleId1,roleId2,..." )
-                    .ofType( Integer.class )
-                    .withValuesSeparatedBy( ',' );
-                
-                accepts("readwrite-roles", "Provide list of roleIds that can read and write SVN" ).withRequiredArg()
-                .describedAs( "roleId1,roleId2,..." )
-                .ofType( Integer.class )
-                .withValuesSeparatedBy( ',' );
-                
-                acceptsAll( asList("c", "create-missing-repos"), "Create missing project repositories");
-            }
-        };
-
-        boolean needHelp = false;
-        OptionSet options = null;
+		// Command line parser instantiation and configuration
+		CmdLn parser = new CmdLn(args).setDescription(VERSION_STRING);
+        parser.addOptions(new CmdLnOption[] {
+        	new CmdLnOption(new String [] {"help"}, new char [] {'?','h'}).setDescription("show help"),
+        	new CmdLnOption("user",'u').setRequiredArgument().setDescription("Redmine database username"),
+        	new CmdLnOption("password",'p').setRequiredArgument().setDescription("Redmine database password (default: \"\")"),
+        	new CmdLnOption("svn-root",'s').setRequiredArgument().setDescription("SVN repositories root (default: /svn)"),
+        	new CmdLnOption("dbname",'d').setRequiredArgument().setDescription("Redmine database name"),
+        	new CmdLnOption("dbhost",'i').setRequiredArgument().setDescription("Redmine database host (default: localhost)"),
+        	new CmdLnOption("port").setRequiredArgument().setDescription("Redmine database port"),
+        	new CmdLnOption("verbose",'v').setDescription("be verbose"),
+        	new CmdLnOption("list-roles",'l').setDescription("list available user roles"),
+        	new CmdLnOption("output-file").setRequiredArgument().setDescription("filename (default:/svn/access.authZ)"),
+        	new CmdLnOption("read-roles").setRequiredArgument().setDescription("Provide list of roleIds that can read SVN: roleId1,roleId2,.."),
+        	new CmdLnOption("rw-roles").setRequiredArgument().setDescription("Provide list of roleIds that can read and write SVN: roleId1,roleId2,.."),
+            new CmdLnOption("create-missing-repos",'c').setDescription("Create missing project repositories")
+        });
         
         // Try to parse options
         try {
-	        options = parser.parse( args );
-	        if ( options.has( "?" ) ) {
-	            needHelp = true;
+	        parser.parse();
+	        
+	        if ( parser.present('h') ) {
+	        	parser.printHelp();
+	 
+	       		System.exit(OK_EXITCODE);
 	        }
-        } catch (OptionException e1) {
-        	System.out.println("ERROR: " + e1.getMessage() + "\n");
-        	
-        	System.out.println(VERSION_STRING);
-    		try {
-    			parser.printHelpOn( System.out );
-    		} catch (Exception e) {
-    			// If this ever happens we're in trouble :) 
-    			e.printStackTrace();
-    		}
-    		
+        } catch (CmdLnException e1) {
+        	System.out.println("ERROR: " + e1.getMessage() + "\n");        	
+        	System.out.println("Use the -h option to get help !");
        		System.exit(BAD_ARGUMENTS_EXITCODE);
         }
-	        
-	    // Validate options
-        if (!options.hasArgument("user") && !needHelp) {
-        	System.out.println("ERROR: Redmine database user name required !\n");
-        	needHelp = true;
-        } else {
-        	username = (String)options.valueOf("user");
-        }
-
-        String dbName = "";
-        if (!options.hasArgument("dbname") && !needHelp) {
-        	System.out.println("ERROR: Redmine database name !\n");
-        	needHelp = true;
-        } else {
-        	dbName = (String)options.valueOf("dbname");
-        }
         
-        if (options.hasArgument("password")) {
-        	password = (String)options.valueOf("password");
-        }
-        
-        int dbport = DEFAULT_DATABASE_PORT;
-        if (options.hasArgument("port")) {
-        	dbport = ((Integer)(options.valueOf("port"))).intValue();
-        }
-        
-        // Build database URL from gathered data
-        dbUrl = String.format("jdbc:mysql://localhost:%d/%s", dbport, dbName);
-        
-        // Initialize processor (Part 1: Database access)
-        SvnReposAccessProcessor processor = new SvnReposAccessProcessor();
-        processor.setUsername(username);
-        processor.setPassword(password);
-        processor.setDbUrl(dbUrl);
-        
-        // Handle listing roles through the command line
-        if (options.has("list-roles") && !needHelp) {
-        	String roleList = "";
-        	
-        	try {
-        		roleList = processor.getRoleList();	
-			}  catch (SQLException e1) {
-	        	System.err.println("Database Access Error: " + e1.toString());
-	        	System.exit(DB_ERROR_EXITCODE);
-	        }
+		try {		
+			// Validate options
+			if (parser.present("verbose")) {
+				verbose = true;
+			}
 			
-			System.out.println("Available roles list:");
-			System.out.println(roleList);
-        	System.exit(OK_EXITCODE);
-        }
-        
-        // Continue with other arguments if roles did not need to be listed
-        if (options.hasArgument("svn-root")) {
-        	svnRoot = (String)options.valueOf("svn-root");
-        }
-        
-        if (!options.hasArgument("read-roles") && !needHelp) {
-        	System.out.println("ERROR: Read roles list is mandatory !\n");
-        	needHelp = true;
-        } else {
-        	readRoles = (List<Integer>)options.valuesOf("read-roles");
-        }
-        
-        if (!options.hasArgument("readwrite-roles") && !needHelp) {
-        	System.out.println("ERROR: Read/write roles list is mandatory !\n");
-        	needHelp = true;
-        } else {
-        	readWriteRoles = (List<Integer>)options.valuesOf("readwrite-roles");
-        }
-        
-        if (options.has("create-missing-repos")) {
-        	createMissingRepos = true;
-        }
-        
-        if (options.has("verbose")) {
-        	verbose = true;
-        }
-        
-        if (options.hasArgument("output-file")) {
-        	outputFilename = (String)options.valueOf("output-file");
-        }
-        
-        // Check for help
-        try {
-        	if (needHelp) {
-        		System.out.println(VERSION_STRING);
-        		parser.printHelpOn( System.out );
-        		
-        		if (!options.has("?")) {
-            		System.exit(BAD_ARGUMENTS_EXITCODE);
-            	}
-        	}
-        } catch (IOException e1) {
-        	// IGNORE: CANNOT DO ANYTHING, EXIT !
-        	// We are in deep trouble if we can't write to SystemOut !
-        	System.exit(BAD_ARGUMENTS_EXITCODE);
-        }
-        
+			String username = "";
+			if (!parser.present("user")) {
+				System.out.println("ERROR: Redmine database user name required !\n");
+				throw new IllegalArgumentException();
+			} else {
+				username = parser.getResult("user").getArgument();
+			}
+
+			String dbName = "";
+			if (!parser.present("dbname")) {
+				System.out.println("ERROR: Redmine database name required !\n");
+				throw new IllegalArgumentException();
+			} else {
+				dbName = parser.getResult("dbname").getArgument();
+			}
+			
+			String dbHost = DEFAULT_DATABASE_HOST;
+			if (parser.present("dbhost")) {
+				dbHost = parser.getResult("dbhost").getArgument();
+			}
+			
+			String password = "";
+			if (parser.present("password")) {
+				password = parser.getResult("password").getArgument();
+			}
+			
+			int dbPort = DEFAULT_DATABASE_PORT;
+			if (parser.present("port")) {
+				try {
+					dbPort = Integer.parseInt(parser.getResult("port").getArgument());
+				} catch (NumberFormatException e) {
+					System.out.println("ERROR: Bad port number format: \"" + parser.getResult("port").getArgument() + "\"");
+					throw new IllegalArgumentException();
+				}
+			}
+			
+			// Build database URL from gathered data
+			String dbUrl = "";
+			dbUrl = String.format("jdbc:mysql://%s:%d/%s", dbHost, dbPort, dbName);
+			if (verbose) {
+				System.out.println("*** Using database URL: " + dbUrl);
+			}
+			
+			// Initialize processor (Part 1: Database access) 
+			processor = new SvnReposAccessProcessor();
+			processor.setUsername(username);
+			processor.setPassword(password);
+			processor.setDbUrl(dbUrl);
+			
+			// Handle listing roles through the command line
+			if (parser.present("list-roles")) {
+				String roleList = "";
+				
+				try {
+					roleList = processor.getRoleList();	
+				}  catch (SQLException e1) {
+			    	System.err.println("ERROR: Database Access Error: " + e1.toString());
+			    	System.exit(DB_ERROR_EXITCODE);
+			    }
+				
+				System.out.println("Available roles list:");
+				System.out.println(roleList);
+				System.exit(OK_EXITCODE);
+			}
+			
+			if (parser.present("svn-root")) {
+				svnRoot = parser.getResult("svn-root").getArgument();
+			}
+			
+			// Parse read-only roles
+			if (!parser.present("read-roles")) {
+				System.out.println("ERROR: Read roles list is mandatory !\n");
+				throw new IllegalArgumentException();
+			} else {
+				String [] readRolesOpt = parser.getResult("read-roles").getArgument().split(",");
+				readRoles = new LinkedList<Integer>();
+				for (String id : readRolesOpt) {
+					try {
+						readRoles.add(Integer.parseInt(id));
+					} catch (NumberFormatException e) {
+						System.out.println("ERROR: Bad read-only role id format: \"" + id + "\"");
+						throw new IllegalArgumentException();
+					}
+				}
+				
+				if (verbose) { 
+					System.out.println("*** Read-only roles: " + readRoles.toString());
+				}
+			}
+			
+			// Parse read/write roles
+			if (!parser.present("rw-roles")) {
+				System.out.println("ERROR: Read/writes roles list is mandatory !\n");
+				throw new IllegalArgumentException();
+			} else {
+				String [] readWriteRolesOpt = parser.getResult("rw-roles").getArgument().split(",");
+				readWriteRoles = new LinkedList<Integer>();
+				
+				for (String id : readWriteRolesOpt) {
+					try {
+						readWriteRoles.add(Integer.parseInt(id));
+					} catch (NumberFormatException e) {
+						System.out.println("ERROR: Bad read/writerole id format: \"" + id + "\"");
+						throw new IllegalArgumentException();
+					}
+				}
+				
+				if (verbose) { 
+					System.out.println("*** Read/write roles: " + readWriteRoles.toString());
+				}
+			}
+			        
+			if (parser.present("create-missing-repos")) {
+				createMissingRepos = true;
+			}
+			
+			if (parser.present("output-file")) {
+				outputFilename = parser.getResult("output-file").getArgument();
+			}
+		} catch (IllegalArgumentException e1) {
+			System.out.println("Use the -h option to get help !");
+    		System.exit(BAD_ARGUMENTS_EXITCODE);
+		}
         // No help required: everything must be valid. Let's run our task
         
         // Initialize processor (Part 2: Other options)
@@ -255,8 +263,8 @@ public class RedmagMain {
 	        processor.generateUserPermissions();
 	        System.exit(OK_EXITCODE);
         } catch (SQLException e1) {
-        	System.out.println("Database Access Error: " + e1.toString());
+        	System.out.println("ERROR: Database Access Error: " + e1.toString());
         	System.exit(DB_ERROR_EXITCODE);
-        }
-   	}
+        }	
+	}
 }
