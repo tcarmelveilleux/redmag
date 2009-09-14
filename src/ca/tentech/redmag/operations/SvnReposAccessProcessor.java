@@ -10,6 +10,8 @@
  * - June 2009 (veilleux):  Original version
  * - September 13 2009 (veilleux): 
  *   - Fixed the missing display in verbose mode when no repositories were created
+ * - September 14 2009 (veilleux):
+ *   - Replaced all occurences of SVNKit usage by MicroSvnReposAdmin class
  *   
  * Description:
  * Processing class for generating SVN repository access. Handles
@@ -47,21 +49,15 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
-import org.tmatesoft.svn.core.SVNException;
-import org.tmatesoft.svn.core.auth.BasicAuthenticationManager;
-import org.tmatesoft.svn.core.wc.SVNWCUtil;
-import org.tmatesoft.svn.core.wc.admin.SVNAdminClient;
-import org.tmatesoft.svn.core.wc.admin.SVNLookClient;
-
 import ca.tentech.redmag.RedmagMain;
 import ca.tentech.redmag.db.RedmineDataLoader;
 import ca.tentech.redmag.db.RedmineProject;
 import ca.tentech.redmag.db.RedmineProjectMember;
+import ca.tentech.redmag.svn.MicroSvnReposAdmin;
 
 /**
- * @author veilleux
- *
  * Processing class for generating SVN repository access
+ * @author veilleux
  */
 public class SvnReposAccessProcessor {
 	private String username = "";
@@ -96,27 +92,7 @@ public class SvnReposAccessProcessor {
 		existingSvnPath = new HashSet<String>();
 		pathToId = new HashMap<String, String>();
 	}
-	
-	/**
-	 * @param svnPath
-	 * @return
-	 */
-	private boolean isValidRepos(String svnPath) {
-		// Create an SVNLookClient that can tell us if a path contains a valid repos
-		SVNLookClient svnLooker = new SVNLookClient(new BasicAuthenticationManager("",""), 
-				SVNWCUtil.createDefaultOptions(true));
 		
-		try {
-			// Try to do a simple operation on the repos
-			svnLooker.doGetUUID(new File(svnPath));
-			// No exception: we have a valid repos
-			return true; 
-		} catch (SVNException e) {
-			// Exception raised: it means that the repos is absent or invalid
-			return false;
-		}	
-	}
-	
 	/**
 	 * Returns a permission determined by a project's role policy.
 	 * This project group policy is independent of users and
@@ -204,7 +180,7 @@ public class SvnReposAccessProcessor {
 			// Manage different cases of file/directory existence
 			if (reposPathFile.exists()) {
 				if (reposPathFile.isDirectory()) {
-					if (isValidRepos(path)) {
+					if (MicroSvnReposAdmin.isValidRepos(reposPathFile)) {
 						// Case 1: exists as a valid SVN repository directory
 						validSvnPath.add(path);
 						existingSvnPath.add(path);
@@ -235,12 +211,10 @@ public class SvnReposAccessProcessor {
 	 * Creates the missing repositories based on the Redmine project database
 	 * and given processor options.
 	 */
-	public void createMissingRepositories() {
-		// SVN administration client
-		SVNAdminClient svnAdmin = new SVNAdminClient(new BasicAuthenticationManager("",""), 
-				SVNWCUtil.createDefaultOptions(true));
-		
-		if (verbose) { System.out.println("\n*** Creating missing repositories"); }
+	public void createMissingRepositories() {		
+		if (verbose) { 
+			System.out.println("\n*** Creating missing repositories"); 
+		}
 
 		int numberCreated = 0;			
 		for (String path : validSvnPath) {	
@@ -252,18 +226,19 @@ public class SvnReposAccessProcessor {
 				}
 				
 				try {
-					// Create a repos compatible with SVN 1.4+, generate a uuid, do not overwrite.
-					// Also: pre-create prop-change hooks
-					svnAdmin.doCreateRepository(new File(path), null, true, false, false, true, false);
+					// Create a repos compatible with SVN 1.4+, generate a uuid, do not overwrite
+					MicroSvnReposAdmin.createRepos(new File(path), "--pre-1.5-compatible");
 					if (verbose) { System.out.printf("SUCCESS !\n"); }
 					existingSvnPath.add(path);
-				} catch (SVNException e) {
+				} catch (IOException e) {
 					if (verbose) { System.out.printf("FAILURE !\n   -->%s\n", e.toString()); }
 				}
 			}
 		}
 		
-		if (verbose && numberCreated == 0) { System.out.println("    SUCCESS: None to create !"); }
+		if (verbose && numberCreated == 0) {
+			System.out.println("    SUCCESS: None to create !");
+		}
 	}
 	
 	/**

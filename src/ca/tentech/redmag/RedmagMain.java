@@ -15,7 +15,11 @@
  *   - Simplified error message display
  *   - Added an argument to specify database host
  *   - Bumped minor version to 1.2
- * 
+ * - September 14 2009 (veilleux):
+ *   - Replaced all occurences of SVNKit calls to the self-written MicroSvnReposAdmin,
+ *     thus eliminating the SVNKit dependency.
+ *   - Bumped minor version to 1.3
+ *   
  * Description:
  * Main class for command-line version of Redmag tool
  *  
@@ -56,7 +60,7 @@ import com.Ostermiller.util.CmdLnOption;
  *
  */
 public class RedmagMain {
-	public static final String VERSION = "1.2";
+	public static final String VERSION = "1.3";
 	public static final String VERSION_STRING = "Redmag v"+VERSION+
 	"\nThe automatic SVN repository management tool for Redmine integration\n"+
 	"By Tennessee Carmel-Veilleux (veilleux@tentech.ca)\n";
